@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import matplotlib.pyplot as plt
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 NEW_YORK = ZoneInfo("America/New_York")
 RATE = 0.04                         # risk-free interest rate (approximate)
 SECONDS_PER_YEAR = 365 * 24 * 60 * 60
@@ -115,7 +116,40 @@ def find_gamma_flip(contracts, spot):
     return best
 
 
-# Step 6: put it all together and plot
+# Step 6: save today's levels to results/levels.csv
+def save_levels(date, spot, total, flip, call_wall, put_wall):
+    """Add one row per day to levels.csv. If the date is already there,
+    replace that row instead of adding a duplicate."""
+    path = RESULTS_DIR / "levels.csv"
+    columns = ["date", "spot", "total_gex_bn", "gamma_flip", "call_wall", "put_wall"]
+
+    # read the rows we already have, keyed by date
+    rows = {}
+    if path.exists():
+        with open(path) as f:
+            for row in csv.DictReader(f):
+                rows[row["date"]] = row
+
+    # add (or replace) today's row
+    rows[date] = {
+        "date": date,
+        "spot": f"{spot:.2f}",
+        "total_gex_bn": f"{total:.2f}",
+        "gamma_flip": f"{flip:.2f}" if flip else "",
+        "call_wall": f"{call_wall:.0f}",
+        "put_wall": f"{put_wall:.0f}",
+    }
+
+    # write everything back, sorted by date
+    RESULTS_DIR.mkdir(exist_ok=True)
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        for d in sorted(rows):
+            writer.writerow(rows[d])
+
+
+# Step 7: put it all together and plot
 def main():
     latest_file = sorted(DATA_DIR.glob("*_chain_*.csv"))[-1]
     contracts = load_contracts(latest_file)
@@ -149,6 +183,11 @@ def main():
     print(f"Gamma flip:  {flip:.2f}" if flip else "Gamma flip:  none found")
     print(f"Call wall:   {call_wall:.0f}")
     print(f"Put wall:    {put_wall:.0f}")
+
+    # file names look like qqq_chain_2026-11-11, so the date is the last part
+    date = latest_file.stem.split("_")[-1]
+    save_levels(date, spot, total, flip, call_wall, put_wall)
+    print(f"Saved to results/levels.csv")
 
     # net GEX at each strike, only for strikes within 8% of spot
     strikes, net = [], []
